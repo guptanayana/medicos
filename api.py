@@ -1,13 +1,30 @@
+import os
 from fastapi import FastAPI, HTTPException
 from transformers import MobileViTForImageClassification, AutoImageProcessor
 from PIL import Image
 import torch
 from pydantic import BaseModel
 import numpy as np
+import requests
+from io import BytesIO
 
-checkpoint_path = "/home/yashwardhan/Downloads/oral_disease_mobilevit/checkpoint-5830"
-model = MobileViTForImageClassification.from_pretrained(checkpoint_path)
-image_processor = AutoImageProcessor.from_pretrained(checkpoint_path)
+# Get port from environment variable (Railway sets this)
+PORT = int(os.environ.get("PORT", 8000))
+
+# Model loading from Hugging Face Hub
+MODEL_ID = os.environ.get("MODEL_ID", "YOUR-USERNAME/YOUR-MODEL-NAME")
+# Set use_auth_token if your model is private
+USE_AUTH_TOKEN = os.environ.get("HF_TOKEN", None)
+
+# Load model and processor from Hugging Face
+model = MobileViTForImageClassification.from_pretrained(
+    MODEL_ID, 
+    use_auth_token=USE_AUTH_TOKEN
+)
+image_processor = AutoImageProcessor.from_pretrained(
+    MODEL_ID,
+    use_auth_token=USE_AUTH_TOKEN
+)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model = model.to(device)
@@ -33,8 +50,12 @@ class PredictionResponse(BaseModel):
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     try:
-        # Load and process image
-        image = Image.open(request.image_path)
+        # Download image from URL
+        response = requests.get(request.image_path)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        
+        # Create image from the downloaded bytes
+        image = Image.open(BytesIO(response.content))
         inputs = image_processor(image, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
@@ -60,9 +81,16 @@ async def predict(request: PredictionRequest):
 async def root():
     return {
         "message": "Oral Disease Detection API",
-        "available_labels": LABELS
+        "available_labels": LABELS,
+        "status": "online"
     }
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    # Railway requires binding to 0.0.0.0 and using the PORT environment variable
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=False)
