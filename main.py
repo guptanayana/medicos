@@ -7,6 +7,7 @@ from pydantic import BaseModel
 import numpy as np
 import requests
 from io import BytesIO
+from fastapi.middleware.cors import CORSMiddleware
 
 # Get port from environment variable (Railway sets this)
 PORT = int(os.environ.get("PORT", 8000))
@@ -37,6 +38,14 @@ app = FastAPI(
     title="Oral Disease Detection API",
     description="API for detecting oral diseases using MobileViT model",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development - replace with your frontend URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class PredictionRequest(BaseModel):
